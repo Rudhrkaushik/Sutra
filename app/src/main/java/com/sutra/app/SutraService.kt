@@ -72,6 +72,7 @@ class SutraService : Service() {
             override fun onReceive(c: Context?, i: Intent?) { bootAnim() }
         }, IntentFilter(Intent.ACTION_USER_PRESENT), RECEIVER_EXPORTED)
         h.postDelayed({ morning() }, 4000); tick()
+        if (!prefs.getBoolean("demo", false)) { prefs.edit().putBoolean("demo", true).apply(); h.postDelayed({ hashira() }, 3500) }
     }
 
     // ---- gestures: tap = listen, double tap = sleep/wake, drag = move up/down on the right edge
@@ -141,6 +142,7 @@ class SutraService : Service() {
         when {
             Regex("\\btime\\b").containsMatchIn(l) -> say("It's " + java.text.SimpleDateFormat("h:mm a", Locale.US).format(Date()) + ", $name.")
             Regex("\\b(date|today|my day)\\b").containsMatchIn(l) -> say("It's " + java.text.SimpleDateFormat("EEEE, d MMMM", Locale.US).format(Date()) + ", $name.")
+            Regex("hashira|demon|slayer").containsMatchIn(l) -> { hashira(); finish() }
             Regex("lesson|gita").containsMatchIn(l) -> say(LESSONS.random())
             else -> {
                 say("Going through it, $name.", wait = false)
@@ -211,19 +213,22 @@ class SutraService : Service() {
         tv.animate().alpha(1f).translationX(0f).setDuration(500).start()
         h.postDelayed({ tv.animate().alpha(0f).setDuration(600).withEndAction { try { wm.removeView(tv) } catch (_: Exception) {} }.start() }, ms)
     }
-    /** Put your pictures in app/src/main/assets/hashira/ (jpg/png). Shows 3 times a day. */
+    /** Pictures live in assets/hashira. File name decides the aura colour. */
+    private val AURA = mapOf("gyomei" to 0xFFE0B84A, "giyu" to 0xFF3AA0FF, "muichiro" to 0xFF45E6D0, "tengen" to 0xFFD95CFF,
+        "sanemi" to 0xFF9BFFB0, "obanai" to 0xFF8C6BFF, "rengoku" to 0xFFFF7A2E)
     private fun hashira() {
-        val f = assets.list("hashira")?.filter { it.matches(Regex(".*\\.(jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)) } ?: return
+        if (hashiraOn) return
+        val f = assets.list("hashira")?.filter { it.matches(Regex(".*\\.(png|webp|jpg|jpeg)", RegexOption.IGNORE_CASE)) } ?: return
         if (f.isEmpty()) return
-        val bmp = assets.open("hashira/" + f.random()).use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 }) }
-        val iv = ImageView(this).apply {
-            setImageBitmap(bmp); scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true; alpha = 0f
-            outlineProvider = object : ViewOutlineProvider() { override fun getOutline(v: View, o: Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(18).toFloat()) } }
-            scaleX = .5f; scaleY = .5f; rotation = -6f; translationX = dp(80).toFloat()
-        }
-        overlay(iv, dp(190), dp(260), small + dp(12), (cy - dp(130)).coerceAtLeast(dp(40)))
-        iv.animate().alpha(1f).scaleX(1f).scaleY(1f).rotation(0f).translationX(0f).setDuration(700).setInterpolator(OvershootInterpolator(1.2f)).start()
-        h.postDelayed({ iv.animate().alpha(0f).scaleX(1.15f).scaleY(1.15f).setDuration(900).withEndAction { try { wm.removeView(iv) } catch (_: Exception) {} }.start() }, 6500)
+        val pick = f.random()
+        val bmp = assets.open("hashira/$pick").use { BitmapFactory.decodeStream(it) } ?: return
+        val col = (AURA[pick.substringBefore('.').lowercase()] ?: 0xFF7A5CFF).toInt()
+        val v = HashiraView(this, bmp, col)
+        val maxY = resources.displayMetrics.heightPixels - dp(400)
+        overlay(v, dp(270), dp(370), small + dp(4), (cy - dp(185)).coerceIn(dp(24), maxOf(dp(24), maxY)))
+        hashiraOn = true
+        h.postDelayed({ try { wm.removeView(v) } catch (_: Exception) {}; hashiraOn = false }, HashiraView.TOTAL + 300)
     }
+    private var hashiraOn = false
     override fun onDestroy() { tts?.shutdown(); sr?.destroy(); try { wm.removeView(orb) } catch (_: Exception) {}; super.onDestroy() }
 }
